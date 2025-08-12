@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: urban_guard_db
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/urban_guard_db
+      SECRET_KEY: urban-guard-secret-key-2024
+      
+  frontend:
+    build:
+      context: .
+    restart: always
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    
+volumes:
+  postgres_data:

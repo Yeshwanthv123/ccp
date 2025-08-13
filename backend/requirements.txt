@@ -8,4 +8,3 @@ pillow==10.1.0
 passlib==1.7.4
 email-validator==2.1.1
 tensorflow
-psycopg2-binary

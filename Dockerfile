@@ -28,3 +28,26 @@ EXPOSE 80
 
 # Command to run Nginx
 CMD ["nginx", "-g", "daemon off;"]
+
+FROM python:3.11-slim
+
+# Set work directory
+WORKDIR /app
+
+# Copy backend code
+COPY ./backend ./backend
+
+# Copy requirements.txt (make sure it exists in backend)
+COPY ./backend/requirements.txt .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Create data directory for SQLite DB
+RUN mkdir -p /app/backend/data
+
+# Expose FastAPI port
+EXPOSE 8000
+
+# Start FastAPI app
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

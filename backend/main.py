@@ -1,41 +1,37 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 import os
-from typing import Optional
+from typing import Optional, List
 import io
 from PIL import Image
+import logging
 
 from database import get_db, engine
 import models
 import schemas
-from ai_model import get_classifier, initialize_model
+from ai_model import get_classifier
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Create tables
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Urban Guard API", version="1.0.0")
+app = FastAPI(title="Urban Guard API", version="1.0.0")  # Removed prefix
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.exception_handler(404)
-async def not_found_handler(request, exc):
-    return JSONResponse(
-        status_code=404,
-        content={"detail": f"Route {request.url.path} not found"}
-    )
 
 # Security
 SECRET_KEY = "urban-guard-secret-key-2024"
@@ -44,9 +40,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/signin")
-
-# Initialize AI model on startup
-initialize_model()
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
@@ -98,7 +91,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 @app.post("/auth/signup", response_model=schemas.Token)
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    # Check if user exists
     db_user = get_user(db, email=user.email)
     if db_user:
         raise HTTPException(
@@ -106,7 +98,6 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
             detail="Email already registered"
         )
     
-    # Create new user
     hashed_password = get_password_hash(user.password)
     db_user = models.User(
         username=user.username,
@@ -117,7 +108,6 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_user)
     
-    # Create access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": db_user.email}, expires_delta=access_token_expires
@@ -166,20 +156,16 @@ async def detect_signage(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Validate file type
     if not file.content_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="File must be an image")
     
     try:
-        # Read image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
         
-        # Get classifier and make prediction
         classifier = get_classifier()
         result = classifier.predict(image)
         
-        # Save detection record
         detection = models.Detection(
             user_id=current_user.id,
             filename=file.filename,
@@ -194,38 +180,9 @@ async def detect_signage(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 
-@app.get("/detections", response_model=list[schemas.Detection])
+@app.get("/detections", response_model=List[schemas.Detection])  # Use List for compatibility
 def get_user_detections(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     return db.query(models.Detection).filter(models.Detection.user_id == current_user.id).all()
-
-@app.get("/model/status")
-def get_model_status():
-    """Get AI model status"""
-    classifier = get_classifier()
-    return {
-        "model_loaded": classifier.model is not None,
-        "model_path": classifier.model_path,
-        "input_shape": classifier.input_shape,
-        "class_names": classifier.class_names
-    }
-
-@app.post("/model/retrain")
-def retrain_model(current_user: models.User = Depends(get_current_user)):
-    """Retrain the AI model (admin only for now)"""
-    try:
-        classifier = get_classifier()
-        history = classifier.train_model(epochs=30)
-        return {
-            "message": "Model retrained successfully",
-            "final_accuracy": float(history.history["accuracy"][-1]),
-            "final_val_accuracy": float(history.history["val_accuracy"][-1])
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retraining model: {str(e)}")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)

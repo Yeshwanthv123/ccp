@@ -7,4 +7,5 @@ python-jose[cryptography]==3.3.0
 pillow==10.1.0
 passlib==1.7.4
 email-validator==2.1.1
-tensorflow
+tensorflow==2.15.1
+psycopg2-binary

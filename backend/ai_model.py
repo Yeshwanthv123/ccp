@@ -1,9 +1,11 @@
 import tensorflow as tf
+from tensorflow.keras import layers  # Add this import
+from tensorflow import keras
 import numpy as np
 from PIL import Image
 import os
 import json
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Any
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -19,18 +21,19 @@ class SignageClassifier:
     def create_model(self) -> tf.keras.Model:
         """Create a CNN model for signage classification"""
         model = tf.keras.Sequential([
-            tf.keras.layers.Rescaling(1./255, input_shape=self.input_shape),
+            layers.Input(shape=self.input_shape),  # Explicit input layer
+            layers.Rescaling(1./255),
 
-            tf.keras.layers.Conv2D(16, 3, padding='same', activation='relu'),
-            tf.keras.layers.MaxPooling2D(),
-            tf.keras.layers.Conv2D(32, 3, padding='same', activation='relu'),
-            tf.keras.layers.MaxPooling2D(),
-            tf.keras.layers.Conv2D(64, 3, padding='same', activation='relu'),
-            tf.keras.layers.MaxPooling2D(),
+            layers.Conv2D(16, 3, padding='same', activation='relu'),
+            layers.MaxPooling2D(),
+            layers.Conv2D(32, 3, padding='same', activation='relu'),
+            layers.MaxPooling2D(),
+            layers.Conv2D(64, 3, padding='same', activation='relu'),
+            layers.MaxPooling2D(),
 
-            tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(128, activation='relu'),
-            tf.keras.layers.Dense(1, activation='sigmoid')
+            layers.Flatten(),
+            layers.Dense(128, activation='relu'),
+            layers.Dense(1, activation='sigmoid')
         ])
 
         model.compile(
@@ -49,10 +52,10 @@ class SignageClassifier:
         y = np.random.randint(0, 2, num_samples)
 
         for i in range(num_samples):
-            if y[i] == 1: # Authorized
-                X[i, 10:20, :, :] = 255.0 # White stripe
-            else: # Unauthorized
-                X[i, :, 10:20, :] = 255.0 # White stripe
+            if y[i] == 1:  # Authorized
+                X[i, 10:20, :, :] = 255.0  # White stripe
+            else:  # Unauthorized
+                X[i, :, 10:20, :] = 255.0  # White stripe
 
         return X, y
 
@@ -72,7 +75,7 @@ class SignageClassifier:
             verbose=1
         )
 
-        os.makedirs("models", exist_ok=True)
+        os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
         self.model.save(self.model_path)
 
         with open("models/training_history.json", "w") as f:
@@ -90,7 +93,7 @@ class SignageClassifier:
         """Load the trained model"""
         if os.path.exists(self.model_path):
             logger.info(f"Loading model from {self.model_path}")
-            self.model = tf.keras.models.load_model(self.model_path)
+            self.model = keras.models.load_model(self.model_path)
         else:
             logger.info("No pre-trained model found. Training new model...")
             self.train_model()
@@ -104,11 +107,13 @@ class SignageClassifier:
         img_array = np.expand_dims(img_array, axis=0)
         return img_array
 
-    def predict(self, image: Image.Image) -> Dict[str, float]:
+    def predict(self, image: Image.Image) -> Dict[str, Any]:
         """Predict if signage is authorized or unauthorized"""
         try:
             if self.model is None:
                 self.load_model()
+            if self.model is None:
+                raise RuntimeError("Model could not be loaded or created.")
 
             processed_image = self.preprocess_image(image)
 
